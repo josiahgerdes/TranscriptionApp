@@ -379,64 +379,60 @@
     if (file) handleFile(file);
   });
 
-  // ── Audio extraction via native MediaRecorder ─────────────
-  // Plays the video silently at 16x speed and records just the audio.
-  // Produces a small webm/opus blob with no external dependencies.
-  async function extractAudio(file) {
-    return new Promise((resolve, reject) => {
-      const video = document.createElement('video');
-      video.style.cssText = 'position:fixed;top:-9999px;left:-9999px;';
-      document.body.appendChild(video);
+  // ── WAV encoder ───────────────────────────────────────────
+  // Encodes a Float32 PCM slice into a valid WAV blob.
+  function encodeWAV(samples, sampleRate) {
+    const buf = new ArrayBuffer(44 + samples.length * 2);
+    const v   = new DataView(buf);
+    const str = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };
 
-      const objectUrl = URL.createObjectURL(file);
-      video.src = objectUrl;
-      video.preload = 'auto';
+    str(0,  'RIFF'); v.setUint32(4,  36 + samples.length * 2, true);
+    str(8,  'WAVE'); str(12, 'fmt ');
+    v.setUint32(16, 16, true);           // chunk size
+    v.setUint16(20, 1,  true);           // PCM
+    v.setUint16(22, 1,  true);           // mono
+    v.setUint32(24, sampleRate, true);
+    v.setUint32(28, sampleRate * 2, true); // byte rate
+    v.setUint16(32, 2,  true);           // block align
+    v.setUint16(34, 16, true);           // bits per sample
+    str(36, 'data'); v.setUint32(40, samples.length * 2, true);
 
-      video.addEventListener('canplay', () => {
-        try {
-          const AudioCtx = window.AudioContext || window.webkitAudioContext;
-          const audioCtx = new AudioCtx();
-          const source   = audioCtx.createMediaElementSource(video);
-          const dest     = audioCtx.createMediaStreamDestination();
-          source.connect(dest); // no connect to audioCtx.destination = silent
+    let off = 44;
+    for (let i = 0; i < samples.length; i++) {
+      const s = Math.max(-1, Math.min(1, samples[i]));
+      v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      off += 2;
+    }
+    return new Blob([buf], { type: 'audio/wav' });
+  }
 
-          const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-            ? 'audio/webm;codecs=opus' : 'audio/webm';
+  // ── Audio extraction via OfflineAudioContext ───────────────
+  // Decodes + resamples to 16kHz mono entirely in memory —
+  // no real-time playback needed, typically 10-50× faster than the video duration.
+  async function decodePCM(file) {
+    setStatusText('Decoding audio');
+    const arrayBuffer = await file.arrayBuffer();
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let decoded;
+    try {
+      decoded = await audioCtx.decodeAudioData(arrayBuffer);
+    } catch {
+      await audioCtx.close();
+      throw new Error('Could not decode audio. Make sure the file is a valid video or audio file.');
+    }
+    await audioCtx.close();
 
-          const recorder = new MediaRecorder(dest.stream, {
-            mimeType,
-            audioBitsPerSecond: 32000, // 32 kbps — ~14 MB/hour, great for speech
-          });
-
-          const chunks = [];
-          recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-          recorder.onstop = () => {
-            const blob = new Blob(chunks, { type: mimeType });
-            URL.revokeObjectURL(objectUrl);
-            document.body.removeChild(video);
-            audioCtx.close();
-            resolve(new File([blob], 'audio.webm', { type: 'audio/webm' }));
-          };
-
-          recorder.start(500);
-          video.volume = 0;
-          video.playbackRate = 16;
-          video.play();
-
-          video.addEventListener('ended', () => {
-            if (recorder.state !== 'inactive') recorder.stop();
-          }, { once: true });
-
-        } catch (err) { reject(err); }
-      }, { once: true });
-
-      video.addEventListener('error', () => {
-        URL.revokeObjectURL(objectUrl);
-        reject(new Error('Could not read the video file.'));
-      }, { once: true });
-
-      video.load();
-    });
+    // Resample to 16 kHz mono
+    const SR     = 16000;
+    const frames = Math.ceil(decoded.duration * SR);
+    setStatusText('Processing audio');
+    const offCtx = new OfflineAudioContext(1, frames, SR);
+    const src    = offCtx.createBufferSource();
+    src.buffer   = decoded;
+    src.connect(offCtx.destination);
+    src.start(0);
+    const rendered = await offCtx.startRendering();
+    return rendered.getChannelData(0); // Float32Array, 16 kHz mono PCM
   }
 
   // ── Main handler ──────────────────────────────────────────
@@ -449,18 +445,30 @@
     showLoading(file.name);
 
     try {
-      let fileToSend = file;
+      let transcript;
 
       if (file.size > WHISPER_LIMIT) {
-        setStatusText('Extracting audio');
-        fileToSend = await extractAudio(file);
-        if (fileToSend.size > WHISPER_LIMIT) {
-          throw new Error('Audio is too large even after extraction. Try a shorter video.');
+        // Decode to raw PCM, then split into ≤12-min WAV chunks
+        const pcm        = await decodePCM(file);
+        const SR         = 16000;
+        const CHUNK_SIZE = 720 * SR; // 12 min × 16000 samples = 11,520,000 samples → ~22 MB WAV
+        const numChunks  = Math.ceil(pcm.length / CHUNK_SIZE);
+        const parts      = [];
+
+        for (let i = 0; i < numChunks; i++) {
+          setStatusText(numChunks > 1 ? `Transcribing part ${i + 1} of ${numChunks}` : 'Transcribing');
+          const slice   = pcm.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+          const wavBlob = encodeWAV(slice, SR);
+          const wavFile = new File([wavBlob], 'audio.wav', { type: 'audio/wav' });
+          parts.push(await transcribeWithWhisper(wavFile, apiKey));
         }
+        transcript = parts.join(' ');
+
+      } else {
+        setStatusText('Transcribing');
+        transcript = await transcribeWithWhisper(file, apiKey);
       }
 
-      setStatusText('Transcribing');
-      const transcript = await transcribeWithWhisper(fileToSend, apiKey);
       currentTranscript = transcript;
       showResults(transcript, file.name);
     } catch (err) {
