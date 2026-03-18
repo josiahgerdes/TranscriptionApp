@@ -384,8 +384,11 @@
   // ── FFmpeg: lazy-load and compress audio ──────────────────
   async function getFFmpeg() {
     if (ffmpegInstance) return ffmpegInstance;
-    const { createFFmpeg } = FFmpeg;
-    ffmpegInstance = createFFmpeg({ log: false });
+    const { createFFmpeg } = window.FFmpeg;
+    ffmpegInstance = createFFmpeg({
+      log: false,
+      corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
+    });
     setStatusText('Loading compressor');
     await ffmpegInstance.load();
     return ffmpegInstance;
@@ -394,7 +397,7 @@
   async function compressToAudio(file) {
     setStatusText('Compressing audio');
     const ff = await getFFmpeg();
-    const { fetchFile } = FFmpeg;
+    const { fetchFile } = window.FFmpeg;
 
     const ext = file.name.split('.').pop().toLowerCase() || 'mp4';
     const inputName = `input.${ext}`;
