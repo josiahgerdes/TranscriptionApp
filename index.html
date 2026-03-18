@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Video Transcriber</title>
   <script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.12/dist/ffmpeg.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -293,14 +294,14 @@
       </svg>
     </div>
     <p class="drop-label">Click to choose a file, or drag &amp; drop here</p>
-    <p class="drop-types">MP4 · MOV · AVI · WEBM · M4A · MP3 &nbsp;·&nbsp; Max 25 MB</p>
+    <p class="drop-types">MP4 · MOV · AVI · WEBM · M4A · MP3</p>
     <input type="file" id="file-input" accept="video/*,audio/*" />
   </div>
 
   <!-- Loading -->
   <div class="loading" id="loading">
     <div class="spinner"></div>
-    <p>Transcribing<span id="loading-dots"></span></p>
+    <p id="loading-status">Transcribing<span id="loading-dots"></span></p>
     <p class="file-label" id="loading-file"></p>
   </div>
 
@@ -322,17 +323,21 @@
   </div>
 
 <script>
-  const dropZone    = document.getElementById('drop-zone');
-  const fileInput   = document.getElementById('file-input');
-  const loadingEl   = document.getElementById('loading');
-  const loadingFile = document.getElementById('loading-file');
-  const resultsEl   = document.getElementById('results');
+  const dropZone      = document.getElementById('drop-zone');
+  const fileInput     = document.getElementById('file-input');
+  const loadingEl     = document.getElementById('loading');
+  const loadingFile   = document.getElementById('loading-file');
+  const loadingStatus = document.getElementById('loading-status');
+  const resultsEl     = document.getElementById('results');
   const transcriptBox = document.getElementById('transcript-box');
-  const errorMsg    = document.getElementById('error-msg');
-  const apiKeyInput = document.getElementById('api-key');
+  const errorMsg      = document.getElementById('error-msg');
+  const apiKeyInput   = document.getElementById('api-key');
+
+  const WHISPER_LIMIT = 25 * 1024 * 1024; // 25 MB
 
   let currentTranscript = '';
   let currentFileName   = '';
+  let ffmpegInstance    = null;
 
   // Restore saved API key
   apiKeyInput.value = localStorage.getItem('ta_api_key') || '';
@@ -350,6 +355,9 @@
   function stopDots() {
     clearInterval(dotsTimer);
     document.getElementById('loading-dots').textContent = '';
+  }
+  function setStatusText(text) {
+    loadingStatus.childNodes[0].textContent = text;
   }
 
   // Click to open file picker
@@ -373,21 +381,56 @@
     if (file) handleFile(file);
   });
 
+  // ── FFmpeg: lazy-load and compress audio ──────────────────
+  async function getFFmpeg() {
+    if (ffmpegInstance) return ffmpegInstance;
+    const { createFFmpeg } = FFmpeg;
+    ffmpegInstance = createFFmpeg({ log: false });
+    setStatusText('Loading compressor');
+    await ffmpegInstance.load();
+    return ffmpegInstance;
+  }
+
+  async function compressToAudio(file) {
+    setStatusText('Compressing audio');
+    const ff = await getFFmpeg();
+    const { fetchFile } = FFmpeg;
+
+    const ext = file.name.split('.').pop().toLowerCase() || 'mp4';
+    const inputName = `input.${ext}`;
+
+    ff.FS('writeFile', inputName, await fetchFile(file));
+    // extract audio only, mono, 16kHz, 32kbps — tiny file, great for speech
+    await ff.run('-i', inputName, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '32k', 'output.mp3');
+
+    const data = ff.FS('readFile', 'output.mp3');
+    try { ff.FS('unlink', inputName); } catch {}
+    try { ff.FS('unlink', 'output.mp3'); } catch {}
+
+    return new File([data.buffer], 'audio.mp3', { type: 'audio/mpeg' });
+  }
+
   // ── Main handler ──────────────────────────────────────────
   async function handleFile(file) {
     const apiKey = apiKeyInput.value.trim();
     if (!apiKey) { showError('Enter your OpenAI API key above.'); return; }
-    if (file.size > 25 * 1024 * 1024) {
-      showError('File exceeds the 25 MB limit. Try compressing or trimming the video first.');
-      return;
-    }
 
     currentFileName = file.name;
     hideError();
     showLoading(file.name);
 
     try {
-      const transcript = await transcribeWithWhisper(file, apiKey);
+      let fileToSend = file;
+
+      if (file.size > WHISPER_LIMIT) {
+        fileToSend = await compressToAudio(file);
+        if (fileToSend.size > WHISPER_LIMIT) {
+          throw new Error('Video audio is too long even after compression. Try splitting it into shorter segments.');
+        }
+      }
+
+      setStatusText('Transcribing');
+      const transcript = await transcribeWithWhisper(fileToSend, apiKey);
       currentTranscript = transcript;
       showResults(transcript, file.name);
     } catch (err) {
@@ -421,7 +464,6 @@
     const { Document, Packer, Paragraph, TextRun, HeadingLevel } = window.docx;
 
     const baseName = currentFileName.replace(/\.[^/.]+$/, '');
-
     const lines = currentTranscript.split('\n');
     const paragraphs = [
       new Paragraph({
@@ -465,6 +507,7 @@
     dropZone.style.display = 'none';
     resultsEl.style.display = 'none';
     loadingFile.textContent = fileName;
+    setStatusText('Starting');
     loadingEl.style.display = 'flex';
     startDots();
   }
