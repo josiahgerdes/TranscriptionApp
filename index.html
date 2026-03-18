@@ -289,8 +289,6 @@
   const transcriptBox = document.getElementById('transcript-box');
   const errorMsg      = document.getElementById('error-msg');
 
-  const WHISPER_LIMIT = 25 * 1024 * 1024; // 25 MB
-
   let currentTranscript = '';
   let currentFileName   = '';
 
@@ -388,41 +386,32 @@
 
   // ── Main handler ──────────────────────────────────────────
   async function handleFile(file) {
-
     currentFileName = file.name;
     hideError();
     showLoading(file.name);
 
     try {
-      let transcript;
+      // Always decode to PCM so we control exact chunk sizes.
+      // Vercel's request body limit is 4.5 MB; 110 s × 16kHz × 2 bytes = ~3.4 MB — safely under.
+      const SR         = 16000;
+      const CHUNK_SIZE = 110 * SR;
+      const pcm        = await decodePCM(file);
+      const numChunks  = Math.ceil(pcm.length / CHUNK_SIZE);
+      const parts      = [];
 
-      if (file.size > WHISPER_LIMIT) {
-        // Decode to raw PCM, then split into ≤12-min WAV chunks
-        const pcm        = await decodePCM(file);
-        const SR         = 16000;
-        const CHUNK_SIZE = 720 * SR; // 12 min × 16000 samples = 11,520,000 samples → ~22 MB WAV
-        const numChunks  = Math.ceil(pcm.length / CHUNK_SIZE);
-        const parts      = [];
-
-        for (let i = 0; i < numChunks; i++) {
-          setStatusText(numChunks > 1 ? `Transcribing part ${i + 1} of ${numChunks}` : 'Transcribing');
-          const slice   = pcm.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-          const wavBlob = encodeWAV(slice, SR);
-          const wavFile = new File([wavBlob], 'audio.wav', { type: 'audio/wav' });
-          parts.push(await transcribeWithWhisper(wavFile));
-        }
-        transcript = parts.join(' ');
-
-      } else {
-        setStatusText('Transcribing');
-        transcript = await transcribeWithWhisper(file);
+      for (let i = 0; i < numChunks; i++) {
+        setStatusText(numChunks > 1 ? `Transcribing part ${i + 1} of ${numChunks}` : 'Transcribing');
+        const slice   = pcm.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+        const wavBlob = encodeWAV(slice, SR);
+        const wavFile = new File([wavBlob], 'audio.wav', { type: 'audio/wav' });
+        parts.push(await transcribeWithWhisper(wavFile));
       }
 
-      currentTranscript = transcript;
-      showResults(transcript, file.name);
+      currentTranscript = parts.join(' ');
+      showResults(currentTranscript, file.name);
     } catch (err) {
       hideLoading();
-      showError(err.message || 'Transcription failed. Check your API key and try again.');
+      showError(err.message || 'Transcription failed. Try again.');
     }
   }
 
