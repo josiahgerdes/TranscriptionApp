@@ -382,9 +382,16 @@
   });
 
   // ── FFmpeg: lazy-load and compress audio ──────────────────
+  function getFFmpegLib() {
+    // CDN may expose as window.FFmpeg or hoist createFFmpeg/fetchFile directly
+    if (window.FFmpeg && window.FFmpeg.createFFmpeg) return window.FFmpeg;
+    if (typeof createFFmpeg === 'function') return { createFFmpeg, fetchFile };
+    throw new Error('FFmpeg library failed to load. Please refresh the page.');
+  }
+
   async function getFFmpeg() {
     if (ffmpegInstance) return ffmpegInstance;
-    const { createFFmpeg } = window.FFmpeg;
+    const { createFFmpeg } = getFFmpegLib();
     ffmpegInstance = createFFmpeg({
       log: false,
       corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
@@ -397,7 +404,7 @@
   async function compressToAudio(file) {
     setStatusText('Compressing audio');
     const ff = await getFFmpeg();
-    const { fetchFile } = window.FFmpeg;
+    const { fetchFile } = getFFmpegLib();
 
     const ext = file.name.split('.').pop().toLowerCase() || 'mp4';
     const inputName = `input.${ext}`;
