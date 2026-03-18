@@ -32,41 +32,6 @@
       margin-bottom: 36px;
     }
 
-    /* ── API Key ── */
-    .api-section {
-      width: 100%;
-      max-width: 580px;
-      margin-bottom: 20px;
-    }
-
-    .api-section label {
-      display: block;
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: #555;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 6px;
-    }
-
-    .api-row {
-      display: flex;
-      gap: 8px;
-    }
-
-    .api-row input {
-      flex: 1;
-      padding: 10px 14px;
-      border: 1.5px solid #ddd;
-      border-radius: 10px;
-      font-size: 0.9rem;
-      outline: none;
-      background: white;
-      color: #111;
-      transition: border-color 0.15s;
-    }
-
-    .api-row input:focus { border-color: #5b50e8; }
 
     /* ── Drop Zone ── */
     .drop-zone {
@@ -277,13 +242,6 @@
   <h1>Video Transcriber</h1>
   <p class="subtitle">Upload a video — get a transcript you can read or download.</p>
 
-  <div class="api-section">
-    <label for="api-key">OpenAI API Key</label>
-    <div class="api-row">
-      <input type="password" id="api-key" placeholder="sk-..." autocomplete="off" />
-    </div>
-  </div>
-
   <!-- Drop Zone -->
   <div class="drop-zone" id="drop-zone">
     <div class="plus-circle">
@@ -330,18 +288,11 @@
   const resultsEl     = document.getElementById('results');
   const transcriptBox = document.getElementById('transcript-box');
   const errorMsg      = document.getElementById('error-msg');
-  const apiKeyInput   = document.getElementById('api-key');
 
   const WHISPER_LIMIT = 25 * 1024 * 1024; // 25 MB
 
   let currentTranscript = '';
   let currentFileName   = '';
-
-  // Restore saved API key
-  apiKeyInput.value = localStorage.getItem('ta_api_key') || '';
-  apiKeyInput.addEventListener('input', () => {
-    localStorage.setItem('ta_api_key', apiKeyInput.value.trim());
-  });
 
   // Animated dots
   let dotsTimer;
@@ -437,8 +388,6 @@
 
   // ── Main handler ──────────────────────────────────────────
   async function handleFile(file) {
-    const apiKey = apiKeyInput.value.trim();
-    if (!apiKey) { showError('Enter your OpenAI API key above.'); return; }
 
     currentFileName = file.name;
     hideError();
@@ -460,13 +409,13 @@
           const slice   = pcm.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
           const wavBlob = encodeWAV(slice, SR);
           const wavFile = new File([wavBlob], 'audio.wav', { type: 'audio/wav' });
-          parts.push(await transcribeWithWhisper(wavFile, apiKey));
+          parts.push(await transcribeWithWhisper(wavFile));
         }
         transcript = parts.join(' ');
 
       } else {
         setStatusText('Transcribing');
-        transcript = await transcribeWithWhisper(file, apiKey);
+        transcript = await transcribeWithWhisper(file);
       }
 
       currentTranscript = transcript;
@@ -477,20 +426,19 @@
     }
   }
 
-  async function transcribeWithWhisper(file, apiKey) {
+  async function transcribeWithWhisper(file) {
     const form = new FormData();
     form.append('file', file, file.name);
     form.append('model', 'whisper-1');
 
-    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    const res = await fetch('/api/transcribe', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}` },
       body: form,
     });
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error?.message || `OpenAI returned ${res.status}`);
+      throw new Error(body.error || `Server returned ${res.status}`);
     }
 
     const data = await res.json();
