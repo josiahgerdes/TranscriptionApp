@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Video Transcriber</title>
-  <script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -435,31 +435,53 @@
   }
 
   // ── Download helpers ───────────────────────────────────────
-  async function downloadDocx() {
-    const { Document, Packer, Paragraph, TextRun, HeadingLevel } = window.docx;
+  function downloadDocx() {
+    try {
+      const { zipSync, strToU8 } = fflate;
+      const baseName = currentFileName.replace(/\.[^/.]+$/, '');
+      const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-    const baseName = currentFileName.replace(/\.[^/.]+$/, '');
-    const lines = currentTranscript.split('\n');
-    const paragraphs = [
-      new Paragraph({
-        text: baseName + ' — Transcript',
-        heading: HeadingLevel.HEADING_1,
-      }),
-      new Paragraph({ text: '' }),
-      ...lines.map(line =>
-        new Paragraph({
-          children: [new TextRun({ text: line, size: 24, font: 'Calibri' })],
-          spacing: { after: 120 },
-        })
-      ),
-    ];
+      // Build word/document.xml — one <w:p> per line
+      const bodyXml = currentTranscript.split('\n').map(line =>
+        `<w:p><w:pPr><w:spacing w:after="160"/></w:pPr><w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t xml:space="preserve">${esc(line)}</w:t></w:r></w:p>`
+      ).join('');
 
-    const doc = new Document({
-      sections: [{ properties: {}, children: paragraphs }],
-    });
+      const docXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>${esc(baseName)} — Transcript</w:t></w:r></w:p>
+    <w:p/>
+    ${bodyXml}
+    <w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>
+  </w:body>
+</w:document>`;
 
-    const blob = await Packer.toBlob(doc);
-    triggerDownload(blob, baseName + '_transcript.docx');
+      const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+
+      const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+
+      const zipped = zipSync({
+        '[Content_Types].xml':          strToU8(contentTypes),
+        '_rels/.rels':                  strToU8(rels),
+        'word/document.xml':            strToU8(docXml),
+        'word/_rels/document.xml.rels': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>`),
+      });
+
+      const blob = new Blob([zipped], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+      triggerDownload(blob, baseName + '_transcript.docx');
+    } catch (err) {
+      alert('Could not generate Word doc: ' + err.message);
+    }
   }
 
   function downloadTxt() {
