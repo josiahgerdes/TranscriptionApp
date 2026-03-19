@@ -269,6 +269,40 @@
     .transcript-box::-webkit-scrollbar-track { background: transparent; }
     .transcript-box::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
 
+    .lang-toggle {
+      display: flex;
+      gap: 4px;
+      background: rgba(255,255,255,0.05);
+      border: 1.5px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 3px;
+      margin-bottom: 12px;
+      width: fit-content;
+    }
+
+    .lang-btn {
+      padding: 6px 16px;
+      border-radius: 7px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      color: rgba(255,255,255,0.4);
+      transition: all 0.2s;
+    }
+
+    .lang-btn.active {
+      background: linear-gradient(135deg, #7c3aed, #db2777);
+      color: white;
+      box-shadow: 0 0 12px rgba(124,58,237,0.4);
+    }
+
+    .lang-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
     .actions {
       display: flex;
       gap: 10px;
@@ -358,6 +392,10 @@
       <h2>Transcript</h2>
       <span class="results-file" id="results-file"></span>
     </div>
+    <div class="lang-toggle">
+      <button class="lang-btn active" id="btn-en" onclick="setLang('en')">English</button>
+      <button class="lang-btn" id="btn-es" onclick="setLang('es')">Español</button>
+    </div>
     <div class="transcript-box" id="transcript-box"></div>
     <div class="actions">
       <button class="btn btn-primary" onclick="downloadDocx()">⬇ Download Word Doc</button>
@@ -378,6 +416,8 @@
 
   let currentTranscript = '';
   let currentFileName   = '';
+  let spanishTranscript = null;
+  let currentLang       = 'en';
 
   // Animated dots
   let dotsTimer;
@@ -519,10 +559,11 @@
   function downloadDocx() {
     try {
       const { zipSync, strToU8 } = fflate;
-      const baseName = currentFileName.replace(/\.[^/.]+$/, '');
+      const activeText = currentLang === 'es' ? spanishTranscript : currentTranscript;
+      const baseName = currentFileName.replace(/\.[^/.]+$/, '') + (currentLang === 'es' ? '_es' : '');
       const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-      const bodyXml = currentTranscript.split('\n').map(line =>
+      const bodyXml = activeText.split('\n').map(line =>
         `<w:p><w:pPr><w:spacing w:after="160"/></w:pPr><w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t xml:space="preserve">${esc(line)}</w:t></w:r></w:p>`
       ).join('');
 
@@ -565,8 +606,9 @@
   }
 
   function downloadTxt() {
-    const blob = new Blob([currentTranscript], { type: 'text/plain;charset=utf-8' });
-    const baseName = currentFileName.replace(/\.[^/.]+$/, '');
+    const activeText = currentLang === 'es' ? spanishTranscript : currentTranscript;
+    const blob = new Blob([activeText], { type: 'text/plain;charset=utf-8' });
+    const baseName = currentFileName.replace(/\.[^/.]+$/, '') + (currentLang === 'es' ? '_es' : '');
     triggerDownload(blob, baseName + '_transcript.txt');
   }
 
@@ -604,12 +646,56 @@
     resultsEl.style.display = 'block';
   }
 
+  // ── Language toggle ────────────────────────────────────────
+  async function setLang(lang) {
+    if (lang === currentLang) return;
+
+    if (lang === 'es') {
+      const btnEs = document.getElementById('btn-es');
+      btnEs.disabled = true;
+      btnEs.textContent = 'Translating…';
+
+      if (!spanishTranscript) {
+        try {
+          const res = await fetch('/api/translate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: currentTranscript }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Translation failed.');
+          spanishTranscript = data.text;
+        } catch (err) {
+          btnEs.disabled = false;
+          btnEs.textContent = 'Español';
+          showError('Translation failed: ' + err.message);
+          return;
+        }
+      }
+
+      btnEs.disabled = false;
+      btnEs.textContent = 'Español';
+      transcriptBox.textContent = spanishTranscript;
+      currentLang = 'es';
+    } else {
+      transcriptBox.textContent = currentTranscript;
+      currentLang = 'en';
+    }
+
+    document.getElementById('btn-en').classList.toggle('active', currentLang === 'en');
+    document.getElementById('btn-es').classList.toggle('active', currentLang === 'es');
+  }
+
   function resetApp() {
     resultsEl.style.display = 'none';
     dropZone.style.display = 'flex';
     fileInput.value = '';
     currentTranscript = '';
     currentFileName = '';
+    spanishTranscript = null;
+    currentLang = 'en';
+    document.getElementById('btn-en').classList.add('active');
+    document.getElementById('btn-es').classList.remove('active');
   }
 
   function showError(msg) {
