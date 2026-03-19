@@ -10,74 +10,132 @@
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f0f0f0;
+      background: #0a0a0f;
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
       padding: 48px 20px 60px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Ambient glow blobs */
+    body::before, body::after {
+      content: '';
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      pointer-events: none;
+      z-index: 0;
+    }
+    body::before {
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(91,80,232,0.25) 0%, transparent 70%);
+      top: -150px; left: -150px;
+    }
+    body::after {
+      width: 500px; height: 500px;
+      background: radial-gradient(circle, rgba(236,72,153,0.18) 0%, transparent 70%);
+      bottom: -100px; right: -100px;
+    }
+
+    /* Everything above blobs */
+    h1, .subtitle, .drop-zone, .loading, .error-msg, .results, .corner-logo {
+      position: relative;
+      z-index: 1;
+    }
+
+    .corner-logo {
+      position: fixed;
+      top: 24px;
+      left: 28px;
+      height: 56px;
+      width: auto;
+      z-index: 10;
+      filter: brightness(0) invert(1);
+      opacity: 0.9;
     }
 
     h1 {
-      font-size: 1.75rem;
+      font-size: 2rem;
       font-weight: 700;
-      color: #111;
-      margin-bottom: 6px;
-      letter-spacing: -0.02em;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #a78bfa 0%, #f472b6 50%, #60a5fa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 8px;
     }
 
     .subtitle {
-      color: #888;
+      color: #555;
       font-size: 0.95rem;
-      margin-bottom: 36px;
+      margin-bottom: 40px;
     }
-
 
     /* ── Drop Zone ── */
     .drop-zone {
       width: 100%;
       max-width: 580px;
-      height: 320px;
-      border: 2.5px dashed #ccc;
-      border-radius: 20px;
-      background: white;
+      height: 340px;
+      border: 1.5px solid rgba(255,255,255,0.08);
+      border-radius: 24px;
+      background: rgba(255,255,255,0.04);
+      backdrop-filter: blur(12px);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      gap: 16px;
-      transition: border-color 0.2s, background 0.2s;
+      gap: 18px;
+      transition: border-color 0.25s, background 0.25s, box-shadow 0.25s;
       position: relative;
       user-select: none;
+      overflow: hidden;
     }
+
+    /* inner glow on hover */
+    .drop-zone::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 24px;
+      background: radial-gradient(ellipse at 50% 60%, rgba(139,92,246,0.15) 0%, transparent 70%);
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+    }
+
+    .drop-zone:hover::before,
+    .drop-zone.drag-over::before { opacity: 1; }
 
     .drop-zone:hover,
     .drop-zone.drag-over {
-      border-color: #5b50e8;
-      background: #f8f7ff;
+      border-color: rgba(139,92,246,0.5);
+      background: rgba(255,255,255,0.06);
+      box-shadow: 0 0 40px rgba(139,92,246,0.15), 0 0 80px rgba(139,92,246,0.08);
     }
 
     .plus-circle {
-      width: 88px;
-      height: 88px;
+      width: 96px;
+      height: 96px;
       border-radius: 50%;
-      background: #5b50e8;
+      background: linear-gradient(135deg, #7c3aed, #db2777);
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: transform 0.15s, background 0.15s;
-      box-shadow: 0 4px 20px rgba(91, 80, 232, 0.35);
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 0 30px rgba(124,58,237,0.5), 0 0 60px rgba(219,39,119,0.25);
     }
 
     .drop-zone:hover .plus-circle {
-      transform: scale(1.07);
-      background: #4a40d4;
+      transform: scale(1.08);
+      box-shadow: 0 0 40px rgba(124,58,237,0.7), 0 0 80px rgba(219,39,119,0.4);
     }
 
     .plus-circle svg {
-      width: 40px;
-      height: 40px;
+      width: 42px; height: 42px;
       stroke: white;
       stroke-width: 2.5;
       stroke-linecap: round;
@@ -85,12 +143,13 @@
 
     .drop-label {
       font-size: 1rem;
-      color: #555;
+      color: rgba(255,255,255,0.6);
     }
 
     .drop-types {
       font-size: 0.78rem;
-      color: #aaa;
+      color: rgba(255,255,255,0.25);
+      letter-spacing: 0.05em;
     }
 
     #file-input { display: none; }
@@ -100,35 +159,38 @@
       display: none;
       flex-direction: column;
       align-items: center;
-      gap: 20px;
+      gap: 22px;
       width: 100%;
       max-width: 580px;
-      height: 320px;
-      background: white;
-      border-radius: 20px;
-      border: 1.5px solid #e8e8e8;
+      height: 340px;
+      background: rgba(255,255,255,0.04);
+      backdrop-filter: blur(12px);
+      border-radius: 24px;
+      border: 1.5px solid rgba(255,255,255,0.08);
       justify-content: center;
+      position: relative;
+      z-index: 1;
     }
 
     .spinner {
-      width: 52px;
-      height: 52px;
-      border: 4px solid #ede9ff;
-      border-top-color: #5b50e8;
+      width: 56px; height: 56px;
+      border: 3px solid rgba(139,92,246,0.2);
+      border-top-color: #a78bfa;
+      border-right-color: #f472b6;
       border-radius: 50%;
-      animation: spin 0.75s linear infinite;
+      animation: spin 0.9s linear infinite;
     }
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .loading p {
-      color: #888;
+      color: rgba(255,255,255,0.5);
       font-size: 0.95rem;
     }
 
     .loading .file-label {
-      font-size: 0.8rem;
-      color: #bbb;
+      font-size: 0.78rem;
+      color: rgba(255,255,255,0.2);
     }
 
     /* ── Error ── */
@@ -136,13 +198,15 @@
       display: none;
       width: 100%;
       max-width: 580px;
-      margin-top: 12px;
+      margin-top: 14px;
       padding: 12px 16px;
-      background: #fff5f5;
-      border: 1px solid #fca5a5;
-      border-radius: 10px;
-      color: #c53030;
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 12px;
+      color: #fca5a5;
       font-size: 0.875rem;
+      position: relative;
+      z-index: 1;
     }
 
     /* ── Results ── */
@@ -151,6 +215,8 @@
       width: 100%;
       max-width: 580px;
       margin-top: 0;
+      position: relative;
+      z-index: 1;
     }
 
     .results-header {
@@ -163,12 +229,12 @@
     .results-header h2 {
       font-size: 1rem;
       font-weight: 600;
-      color: #111;
+      color: rgba(255,255,255,0.7);
     }
 
     .results-file {
       font-size: 0.78rem;
-      color: #aaa;
+      color: rgba(255,255,255,0.25);
       max-width: 260px;
       white-space: nowrap;
       overflow: hidden;
@@ -176,23 +242,24 @@
     }
 
     .transcript-box {
-      background: white;
-      border: 1.5px solid #e8e8e8;
-      border-radius: 16px;
-      padding: 22px 24px;
+      background: rgba(255,255,255,0.04);
+      backdrop-filter: blur(12px);
+      border: 1.5px solid rgba(255,255,255,0.08);
+      border-radius: 18px;
+      padding: 24px 26px;
       min-height: 220px;
-      max-height: 420px;
+      max-height: 440px;
       overflow-y: auto;
       font-size: 0.95rem;
-      line-height: 1.75;
-      color: #222;
+      line-height: 1.8;
+      color: rgba(255,255,255,0.8);
       white-space: pre-wrap;
       word-break: break-word;
     }
 
-    .transcript-box::-webkit-scrollbar { width: 6px; }
+    .transcript-box::-webkit-scrollbar { width: 5px; }
     .transcript-box::-webkit-scrollbar-track { background: transparent; }
-    .transcript-box::-webkit-scrollbar-thumb { background: #ddd; border-radius: 3px; }
+    .transcript-box::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
 
     .actions {
       display: flex;
@@ -202,47 +269,47 @@
     }
 
     .btn {
-      padding: 10px 20px;
-      border-radius: 10px;
+      padding: 10px 22px;
+      border-radius: 12px;
       font-size: 0.875rem;
       font-weight: 600;
       cursor: pointer;
       border: none;
-      transition: all 0.15s;
+      transition: all 0.2s;
       white-space: nowrap;
     }
 
     .btn-primary {
-      background: #5b50e8;
+      background: linear-gradient(135deg, #7c3aed, #db2777);
       color: white;
-      box-shadow: 0 2px 10px rgba(91, 80, 232, 0.3);
+      box-shadow: 0 0 20px rgba(124,58,237,0.4), 0 0 40px rgba(219,39,119,0.2);
     }
 
-    .btn-primary:hover { background: #4a40d4; }
+    .btn-primary:hover {
+      box-shadow: 0 0 28px rgba(124,58,237,0.6), 0 0 56px rgba(219,39,119,0.3);
+      transform: translateY(-1px);
+    }
 
     .btn-secondary {
-      background: white;
-      color: #444;
-      border: 1.5px solid #ddd;
+      background: rgba(255,255,255,0.07);
+      color: rgba(255,255,255,0.7);
+      border: 1.5px solid rgba(255,255,255,0.12);
     }
 
-    .btn-secondary:hover { background: #f7f7f7; }
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.11);
+      color: white;
+    }
 
     .btn-ghost {
       background: transparent;
-      color: #999;
-      border: 1.5px solid #e8e8e8;
+      color: rgba(255,255,255,0.3);
+      border: 1.5px solid rgba(255,255,255,0.08);
     }
 
-    .btn-ghost:hover { color: #555; background: #f7f7f7; }
-
-    .corner-logo {
-      position: fixed;
-      top: 20px;
-      left: 24px;
-      height: 36px;
-      width: auto;
-      opacity: 0.85;
+    .btn-ghost:hover {
+      color: rgba(255,255,255,0.6);
+      background: rgba(255,255,255,0.05);
     }
   </style>
 </head>
@@ -340,7 +407,6 @@
   });
 
   // ── WAV encoder ───────────────────────────────────────────
-  // Encodes a Float32 PCM slice into a valid WAV blob.
   function encodeWAV(samples, sampleRate) {
     const buf = new ArrayBuffer(44 + samples.length * 2);
     const v   = new DataView(buf);
@@ -348,13 +414,13 @@
 
     str(0,  'RIFF'); v.setUint32(4,  36 + samples.length * 2, true);
     str(8,  'WAVE'); str(12, 'fmt ');
-    v.setUint32(16, 16, true);           // chunk size
-    v.setUint16(20, 1,  true);           // PCM
-    v.setUint16(22, 1,  true);           // mono
+    v.setUint32(16, 16, true);
+    v.setUint16(20, 1,  true);
+    v.setUint16(22, 1,  true);
     v.setUint32(24, sampleRate, true);
-    v.setUint32(28, sampleRate * 2, true); // byte rate
-    v.setUint16(32, 2,  true);           // block align
-    v.setUint16(34, 16, true);           // bits per sample
+    v.setUint32(28, sampleRate * 2, true);
+    v.setUint16(32, 2,  true);
+    v.setUint16(34, 16, true);
     str(36, 'data'); v.setUint32(40, samples.length * 2, true);
 
     let off = 44;
@@ -366,9 +432,7 @@
     return new Blob([buf], { type: 'audio/wav' });
   }
 
-  // ── Audio extraction via OfflineAudioContext ───────────────
-  // Decodes + resamples to 16kHz mono entirely in memory —
-  // no real-time playback needed, typically 10-50× faster than the video duration.
+  // ── Audio decode via OfflineAudioContext ───────────────────
   async function decodePCM(file) {
     setStatusText('Decoding audio');
     const arrayBuffer = await file.arrayBuffer();
@@ -382,7 +446,6 @@
     }
     await audioCtx.close();
 
-    // Resample to 16 kHz mono
     const SR     = 16000;
     const frames = Math.ceil(decoded.duration * SR);
     setStatusText('Processing audio');
@@ -392,7 +455,7 @@
     src.connect(offCtx.destination);
     src.start(0);
     const rendered = await offCtx.startRendering();
-    return rendered.getChannelData(0); // Float32Array, 16 kHz mono PCM
+    return rendered.getChannelData(0);
   }
 
   // ── Main handler ──────────────────────────────────────────
@@ -402,8 +465,6 @@
     showLoading(file.name);
 
     try {
-      // Always decode to PCM so we control exact chunk sizes.
-      // Vercel's request body limit is 4.5 MB; 110 s × 16kHz × 2 bytes = ~3.4 MB — safely under.
       const SR         = 16000;
       const CHUNK_SIZE = 110 * SR;
       const pcm        = await decodePCM(file);
@@ -452,7 +513,6 @@
       const baseName = currentFileName.replace(/\.[^/.]+$/, '');
       const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-      // Build word/document.xml — one <w:p> per line
       const bodyXml = currentTranscript.split('\n').map(line =>
         `<w:p><w:pPr><w:spacing w:after="160"/></w:pPr><w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t xml:space="preserve">${esc(line)}</w:t></w:r></w:p>`
       ).join('');
