@@ -71,7 +71,15 @@
     .subtitle {
       color: #555;
       font-size: 0.95rem;
-      margin-bottom: 40px;
+      margin-bottom: 10px;
+    }
+
+    .disclaimer {
+      font-size: 0.72rem;
+      color: rgba(255,255,255,0.18);
+      margin-bottom: 32px;
+      position: relative;
+      z-index: 1;
     }
 
     /* ── Drop Zone ── */
@@ -319,6 +327,7 @@
 
   <h1>Video Transcriber</h1>
   <p class="subtitle">Upload a video — get a transcript you can read or download.</p>
+  <p class="disclaimer">AI transcription may contain errors. Always review before use.</p>
 
   <!-- Drop Zone -->
   <div class="drop-zone" id="drop-zone">
